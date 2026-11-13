@@ -1,0 +1,18 @@
+{
+  "name": "project-os",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Локальный мультипроектный трекер идей и база знаний: SQLite + веб-интерфейс + Obsidian-совместимый vault.",
+  "scripts": {
+    "start": "node --no-warnings server.mjs",
+    "dev": "node --no-warnings --watch server.mjs",
+    "kb": "node --no-warnings cli.mjs",
+    "backup": "powershell -ExecutionPolicy Bypass -File backup.ps1",
+    "cleanup:uploads": "node --no-warnings scripts/cleanup-uploads.mjs",
+    "backfill:status": "node --no-warnings scripts/backfill-status-history.mjs"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17120e">
+  <title>PROJECT OS — база знаний</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <button class="mobile-menu btn ghost" data-action="toggle-sidebar" aria-label="Меню">☰</button>
+      <div class="brand">
+        <div class="brand-mark">◈</div>
+        <div>
+          <div class="brand-title">PROJECT OS</div>
+          <div class="brand-sub">knowledge base</div>
+        </div>
+      </div>
+      <div class="project-switch">
+        <label for="project-select">Проект</label>
+        <select id="project-select"></select>
+      </div>
+      <div class="top-search">
+        <span class="search-icon">⌕</span>
+        <input id="global-search" type="search" placeholder="Поиск по идеям, тегам, источникам…" autocomplete="off">
+        <kbd>/</kbd>
+      </div>
+      <div class="top-actions">
+        <button class="btn ghost" data-action="new-project">+ Проект</button>
+        <button class="btn accent" data-action="export">Экспорт</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar" id="sidebar">
+        <div id="project-card" class="project-card"></div>
+        <div class="mobile-project-switch">
+          <label for="mobile-project-select">Проект</label>
+          <select id="mobile-project-select"></select>
+        </div>
+        <nav id="nav" class="nav"></nav>
+        <div class="filter-block">
+          <div class="block-title">Фильтры</div>
+          <select id="filter-status" aria-label="Статус"></select>
+          <select id="filter-kind" aria-label="Тип"></select>
+          <select id="filter-entity" aria-label="Объект"></select>
+          <input id="filter-tag" type="text" placeholder="Тег" autocomplete="off">
+          <button class="btn small ghost" data-action="clear-filters">Сбросить фильтры</button>
+        </div>
+        <div class="sections-block">
+          <div class="block-title">Разделы <span id="section-count" class="muted"></span></div>
+          <div id="section-list" class="section-list"></div>
+        </div>
+        <div class="sidebar-footer">
+          <div>SQLite + Obsidian mirror</div>
+          <div id="version" class="muted"></div>
+        </div>
+      </aside>
+
+      <main class="main" id="main"></main>
+      <aside class="inspector" id="inspector"></aside>
+    </div>
+  </div>
+
+  <div id="toast" class="toast-wrap"></div>
+  <div id="modal" class="modal-backdrop hidden"></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
