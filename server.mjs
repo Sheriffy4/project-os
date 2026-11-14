@@ -7,6 +7,13 @@ import { openApp, DB_PATH, UPLOAD_DIR, ROOT } from './lib/app.mjs';
 import * as db from './lib/db.mjs';
 import { exportVault, buildSectionBrief } from './lib/export-vault.mjs';
 import { importVault } from './lib/import-vault.mjs';
+import {
+  buildFilePrompt,
+  buildFileTemplate,
+  listProjectFiles,
+  readProjectFile,
+  writeProjectFile,
+} from './lib/project-files.mjs';
 import { DEFAULT_SECTIONS, buildKickoffPrompt, buildStarterPrompts, starterIdeasFor } from './lib/templates.mjs';
 
 const PORT = Number(process.env.PORT || 4317);
@@ -280,6 +287,49 @@ async function handleApi(req, res, url) {
     if (method !== 'GET') throw new HttpError(405, 'Метод не поддерживается');
     const project = projectOr404(decodeURIComponent(sourceMatch[1]));
     return serveProjectSource(req, res, url, project);
+  }
+
+  const filesMatch = p.match(/^\/api\/projects\/([^/]+)\/files$/);
+  if (filesMatch) {
+    if (method !== 'GET') throw new HttpError(405, 'Метод не поддерживается');
+    const project = projectOr404(decodeURIComponent(filesMatch[1]));
+    return json(res, 200, { files: listProjectFiles(project) });
+  }
+
+  const filePromptMatch = p.match(/^\/api\/projects\/([^/]+)\/files\/([^/]+)\/prompt$/);
+  if (filePromptMatch) {
+    if (method !== 'GET') throw new HttpError(405, 'Метод не поддерживается');
+    const project = projectOr404(decodeURIComponent(filePromptMatch[1]));
+    const key = decodeURIComponent(filePromptMatch[2]);
+    if (!listProjectFiles(project).some((file) => file.key === key)) {
+      throw new HttpError(404, 'Файл не найден');
+    }
+    return json(res, 200, { prompt: buildFilePrompt(project, key, db.listSections(database, project.id)) });
+  }
+
+  const fileMatch = p.match(/^\/api\/projects\/([^/]+)\/files\/([^/]+)$/);
+  if (fileMatch) {
+    const project = projectOr404(decodeURIComponent(fileMatch[1]));
+    const key = decodeURIComponent(fileMatch[2]);
+    const file = listProjectFiles(project).find((item) => item.key === key);
+    if (!file) throw new HttpError(404, 'Файл не найден');
+    if (method === 'GET') {
+      const content = readProjectFile(project, key);
+      const template = buildFileTemplate(project, key, db.listSections(database, project.id));
+      return json(res, 200, {
+        file,
+        exists: content !== null,
+        content: content ?? template,
+        template,
+      });
+    }
+    if (method === 'PUT') {
+      const body = await readBody(req);
+      if (typeof body.content !== 'string') throw new HttpError(400, 'Нужно поле content');
+      if (Buffer.byteLength(body.content, 'utf8') > 1024 * 1024) throw new HttpError(413, 'Файл больше 1 МБ');
+      return json(res, 200, { ok: true, file: writeProjectFile(project, key, body.content) });
+    }
+    throw new HttpError(405, 'Метод не поддерживается');
   }
 
   if (p === '/api/projects' && method === 'GET') {

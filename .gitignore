@@ -8,6 +8,9 @@ projects/*
 !projects/.gitkeep
 exports/
 
+# Local game source created by agents; not part of the tracker repo.
+/emulator/
+
 # Game-specific / local-only seed and migration files.
 # The reusable tracker works with an empty database and the new-project wizard.
 /seed.mjs

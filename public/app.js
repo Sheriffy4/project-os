@@ -36,6 +36,7 @@ const NAV = [
   ['sections', '◍', 'Разделы'],
   ['agents', '⚑', 'Агенты'],
   ['graph', '⌘', 'Карта связей'],
+  ['files', '✎', 'Файлы проекта'],
   ['wizard', '✦', 'Новый проект'],
   ['export', '↧', 'Экспорт'],
 ];
@@ -46,6 +47,7 @@ const state = {
   project: null,
   ideas: [],
   sections: [],
+  projectFiles: [],
   selectedId: null,
   selectedIdea: null,
   view: localStorage.getItem('kb.view') || 'feed',
@@ -344,6 +346,7 @@ function renderSidebar() {
   if (!project) return;
   const counts = countsByStatus(state.ideas);
   const total = state.ideas.filter((i) => i.kind !== 'comment').length;
+  const missingAgents = state.projectFiles.find((file) => file.key === 'agents' && !file.exists);
 
   const card = $('#project-card');
   if (card) {
@@ -355,7 +358,8 @@ function renderSidebar() {
         <span class="pill">${total} записей</span>
         <span class="pill amber">${counts.clarify} уточнить</span>
         <span class="pill">${project.export_path || '—'}</span>
-      </div>`;
+      </div>
+      ${missingAgents ? '<button class="pc-warning" data-action="view" data-view="files">⚠ AGENTS.md не создан — создать</button>' : ''}`;
   }
 
   const nav = $('#nav');
@@ -447,6 +451,7 @@ function renderFeed() {
   const filtered = filteredIdeas();
   const counts = countsByStatus(filteredIdeas(false, true));
   const activeSection = state.filters.section ? sectionByKey(state.filters.section) : null;
+  const missingAgents = state.projectFiles.find((file) => file.key === 'agents' && !file.exists);
   const title = activeSection ? `${escapeHtml(activeSection.icon)} ${escapeHtml(activeSection.name)}` : 'Лента знаний';
   const subtitle = activeSection
     ? `${escapeHtml(activeSection.description || 'Раздел проекта.')} · ${filtered.length} записей`
@@ -462,6 +467,13 @@ function renderFeed() {
         <button class="btn accent" data-action="focus-composer">+ Новая запись в базу</button>
       </div>
     </div>
+    ${missingAgents ? `<div class="file-warning compact">
+      <div><b>AGENTS.md не создан.</b> ИИ-агенты не получат правила проекта. Создай файл из шаблона или скопируй промпт для агента.</div>
+      <div class="file-warning-actions">
+        <button class="btn small accent" data-action="open-file" data-file="agents">Создать из шаблона</button>
+        <button class="btn small ghost" data-action="view" data-view="files">Все файлы проекта</button>
+      </div>
+    </div>` : ''}
     <div class="stat-row">
       ${statusStatButton('accepted', 'Принято', '#a3e635', counts)}
       ${statusStatButton('needs_rework', 'Доработать', '#ffc53d', counts)}
@@ -692,6 +704,121 @@ function renderSections() {
         </div>`;
       }).join('')}
     </div>`;
+}
+
+/* ── Rendering: project files ───────────────────────────── */
+
+function formatFileSize(bytes) {
+  if (!bytes) return '0 Б';
+  if (bytes < 1024) return `${bytes} Б`;
+  return `${Math.round(bytes / 1024)} КБ`;
+}
+
+function renderFiles() {
+  const main = $('#main');
+  const files = state.projectFiles || [];
+  const agents = files.find((file) => file.key === 'agents');
+
+  if (!files.length) {
+    main.innerHTML = `<div class="page-head"><div><h1>Файлы проекта</h1><div class="sub">Базовые документы для людей и ИИ-агентов.</div></div></div>
+      <div class="empty">Список файлов не загрузился.<br><button class="btn small" data-action="refresh-files">Обновить</button></div>`;
+    return;
+  }
+
+  main.innerHTML = `
+    <div class="page-head">
+      <div>
+        <h1>Файлы проекта</h1>
+        <div class="sub">Базовые документы проекта. <code>AGENTS.md</code> — главный файл правил для ИИ-агентов; <code>README.md</code> — описание; остальные — обёртки для Claude, Gemini, Cursor и Copilot.</div>
+      </div>
+      <div class="head-actions"><button class="btn ghost" data-action="refresh-files">Обновить</button></div>
+    </div>
+    ${!agents?.exists ? `<div class="file-warning">
+      <div><b>AGENTS.md не создан.</b> Агенты не получат правила проекта. Создай файл из шаблона или скопируй промпт и передай его агенту.</div>
+      <div class="file-warning-actions">
+        <button class="btn accent" data-action="open-file" data-file="agents">Создать из шаблона</button>
+        <button class="btn ghost" data-action="copy-file-prompt" data-file="agents">Скопировать промпт</button>
+      </div>
+    </div>` : ''}
+    <div class="files-grid">
+      ${files.map((file) => `
+        <div class="file-card ${file.primary ? 'primary' : ''}">
+          <div class="file-card-head">
+            <div class="file-card-icon">${escapeHtml(file.icon || '▤')}</div>
+            <div class="file-card-name">${escapeHtml(file.name)}</div>
+            <span class="pill ${file.exists ? 'green' : 'amber'}">${file.exists ? 'есть' : 'нет'}</span>
+            ${file.primary ? '<span class="pill accent">базовый</span>' : ''}
+          </div>
+          <div class="file-card-desc">${escapeHtml(file.description)}</div>
+          <div class="file-card-meta">
+            <code>${escapeHtml(file.path)}</code>
+            ${file.exists ? `<span>${formatFileSize(file.size)}</span><span>${fmtDate(file.updated_at)}</span>` : '<span>файл ещё не создан</span>'}
+          </div>
+          <div class="file-card-actions">
+            <button class="btn small ${file.exists ? 'ghost' : 'accent'}" data-action="open-file" data-file="${escapeHtml(file.key)}">${file.exists ? 'Открыть' : 'Создать'}</button>
+            <button class="btn small ghost" data-action="copy-file-prompt" data-file="${escapeHtml(file.key)}">Промпт агенту</button>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="hint" style="margin-top:14px">AGENTS.md — основной источник правил. CLAUDE.md, GEMINI.md, .cursor/rules и .github/copilot-instructions.md — короткие обёртки, которые требуют прочитать AGENTS.md. Файлы лежат в vault проекта; экспорт не перезаписывает AGENTS.md и README.md.</div>`;
+}
+
+async function openFileEditor(key) {
+  if (!state.project) return;
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(state.project.slug)}/files/${encodeURIComponent(key)}`);
+    const file = data.file;
+    const content = data.content || '';
+    const template = data.template || content;
+    openModal(`<button class="modal-close" data-action="close-modal">×</button>
+      <h2>${escapeHtml(file.name)}</h2>
+      <div class="sub">${escapeHtml(file.path)} · ${file.exists ? 'файл существует' : 'файл ещё не создан — ниже шаблон, проверь и сохрани'}</div>
+      <form id="file-form" data-file="${escapeHtml(file.key)}" data-project="${escapeHtml(state.project.slug)}">
+        <textarea class="textarea file-editor" name="content" rows="20" spellcheck="false">${escapeHtml(content)}</textarea>
+        <textarea id="file-template" class="hidden">${escapeHtml(template)}</textarea>
+        <div class="file-editor-actions">
+          <button type="button" class="btn small ghost" data-action="toggle-file-preview">Предпросмотр</button>
+          <button type="button" class="btn small ghost" data-action="fill-file-template">Шаблон</button>
+          <button type="button" class="btn small ghost" data-action="copy-file-content">Копировать</button>
+          <span class="hint">Markdown. Сохраняется в vault проекта.</span>
+        </div>
+        <div id="file-preview" class="md file-preview hidden"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-action="close-modal">Отмена</button>
+          <button type="submit" class="btn accent">Сохранить</button>
+        </div>
+      </form>`, 'modal-wide');
+  } catch (error) {
+    toast(error.message, 'err');
+  }
+}
+
+async function copyFilePrompt(key) {
+  if (!state.project) return;
+  try {
+    const { prompt } = await api(`/api/projects/${encodeURIComponent(state.project.slug)}/files/${encodeURIComponent(key)}/prompt`);
+    await copyText(prompt);
+  } catch (error) {
+    toast(error.message, 'err');
+  }
+}
+
+function toggleFilePreview() {
+  const textarea = $('#file-form textarea[name="content"]');
+  const preview = $('#file-preview');
+  if (!textarea || !preview) return;
+  preview.innerHTML = markdown(textarea.value);
+  preview.classList.toggle('hidden');
+}
+
+function fillFileTemplate() {
+  const template = $('#file-template');
+  const textarea = $('#file-form textarea[name="content"]');
+  if (!template || !textarea) return;
+  if (!confirm('Заменить текущее содержимое шаблоном?')) return;
+  textarea.value = template.value;
+  const preview = $('#file-preview');
+  if (preview && !preview.classList.contains('hidden')) preview.innerHTML = markdown(textarea.value);
 }
 
 /* ── Rendering: agents ──────────────────────────────────── */
@@ -996,6 +1123,7 @@ function renderMain() {
   else if (state.view === 'agents') renderAgents();
   else if (state.view === 'wizard') renderWizard();
   else if (state.view === 'graph') renderGraph();
+  else if (state.view === 'files') renderFiles();
   else if (state.view === 'export') renderExport();
   else renderFeed();
 }
@@ -1020,10 +1148,26 @@ async function loadProject(slug) {
   state.composerOpen = false;
   state.wizardResult = null;
   state.lastImport = null;
+  state.projectFiles = [];
   const { ideas } = await api(`/api/projects/${project.id}/ideas?limit=5000`);
   state.ideas = ideas;
+  await refreshProjectFiles();
   localStorage.setItem('kb.project', project.slug);
   localStorage.setItem('kb.view', state.view);
+}
+
+async function refreshProjectFiles() {
+  if (!state.project) {
+    state.projectFiles = [];
+    return;
+  }
+  try {
+    const { files } = await api(`/api/projects/${encodeURIComponent(state.project.slug)}/files`);
+    state.projectFiles = files;
+  } catch (error) {
+    state.projectFiles = [];
+    console.warn('[files] cannot load:', error.message);
+  }
 }
 
 async function reloadIdeas() {
@@ -1163,9 +1307,9 @@ async function uploadAttachments(files) {
   }
 }
 
-function openModal(html) {
+function openModal(html, className = '') {
   const modal = $('#modal');
-  modal.innerHTML = `<div class="modal">${html}</div>`;
+  modal.innerHTML = `<div class="modal ${className}">${html}</div>`;
   modal.classList.remove('hidden');
 }
 
@@ -1315,6 +1459,7 @@ document.addEventListener('click', async (event) => {
     localStorage.setItem('kb.view', state.view);
     if (state.view === 'agents') refreshAgentRuns();
     if (state.view === 'graph') loadGraph();
+    if (state.view === 'files') refreshProjectFiles().then(() => { if (state.view === 'files') renderMain(); });
     renderSidebar();
     renderMain();
     $('#sidebar')?.classList.remove('open');
@@ -1364,6 +1509,33 @@ document.addEventListener('click', async (event) => {
   if (action === 'close-composer') {
     state.composerOpen = false;
     renderMain();
+    return;
+  }
+  if (action === 'open-file') {
+    await openFileEditor(actionEl.dataset.file);
+    return;
+  }
+  if (action === 'copy-file-prompt') {
+    await copyFilePrompt(actionEl.dataset.file);
+    return;
+  }
+  if (action === 'refresh-files') {
+    await refreshProjectFiles();
+    renderSidebar();
+    renderMain();
+    return;
+  }
+  if (action === 'toggle-file-preview') {
+    toggleFilePreview();
+    return;
+  }
+  if (action === 'fill-file-template') {
+    fillFileTemplate();
+    return;
+  }
+  if (action === 'copy-file-content') {
+    const textarea = $('#file-form textarea[name="content"]');
+    if (textarea) await copyText(textarea.value);
     return;
   }
   if (action === 'select') {
@@ -1580,6 +1752,27 @@ document.addEventListener('submit', async (event) => {
       renderMain();
       await selectIdea(idea.id);
       toast('Запись сохранена', 'ok');
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+    return;
+  }
+
+  if (form.id === 'file-form') {
+    if (!state.project) return;
+    const key = form.dataset.file;
+    const projectSlug = form.dataset.project || state.project.slug;
+    const content = String(new FormData(form).get('content') || '');
+    try {
+      await api(`/api/projects/${encodeURIComponent(projectSlug)}/files/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        body: { content },
+      });
+      closeModal();
+      await refreshProjectFiles();
+      renderSidebar();
+      renderMain();
+      toast('Файл сохранён', 'ok');
     } catch (error) {
       toast(error.message, 'err');
     }
