@@ -52,6 +52,7 @@ const state = {
   filters: { status: '', kind: '', entity: '', tag: '', q: '', section: '' },
   composerFiles: [],
   composerSection: '',
+  composerOpen: false,
   inspectorOpen: false,
   agents: { selected: new Set(), task: 'audit', extra: '', brief: '', runs: [] },
   wizardResult: null,
@@ -78,7 +79,7 @@ function inlineMd(value) {
   x = x.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   x = x.replace(/\*(.+?)\*/g, '<em>$1</em>');
   x = x.replace(/~~(.+?)~~/g, '<del>$1</del>');
-  x = x.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  x = x.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/(?!\/))[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   return x;
 }
 
@@ -352,9 +353,10 @@ function renderSidebar() {
 
   const nav = $('#nav');
   if (nav) {
+    const activeView = state.filters.section ? 'sections' : state.view;
     nav.innerHTML = NAV.map(([view, icon, label]) => {
       const count = view === 'feed' ? total : view === 'board' ? total : view === 'sections' ? state.sections.length : '';
-      return `<button class="nav-item ${state.view === view ? 'active' : ''}" data-action="view" data-view="${view}">
+      return `<button class="nav-item ${activeView === view ? 'active' : ''}" data-action="view" data-view="${view}">
         <span class="nav-icon">${icon}</span><span>${label}</span>${count !== '' ? `<span class="nav-count">${count}</span>` : ''}
       </button>`;
     }).join('');
@@ -400,11 +402,14 @@ function renderAll() {
 /* ── Rendering: feed ────────────────────────────────────── */
 
 function composerHtml() {
-  const sectionKey = state.composerSection || state.filters.section || state.sections[0]?.key || '';
+  const sectionKey = state.filters.section || state.composerSection || state.sections[0]?.key || '';
   return `<form id="composer" class="composer dropzone" data-drop="composer">
     <div class="composer-top">
       <div class="composer-title">Новая запись в базу</div>
-      <div class="hint">Ctrl+Enter — сохранить</div>
+      <div class="composer-top-actions">
+        <span class="hint">Ctrl+Enter — сохранить</span>
+        <button class="btn small ghost" type="button" data-action="close-composer">Свернуть</button>
+      </div>
     </div>
     <div class="composer-grid">
       <label class="field"><span>Раздел</span><select class="input" name="section" required>
@@ -432,16 +437,22 @@ function composerHtml() {
 
 function renderFeed() {
   const main = $('#main');
-  const counts = countsByStatus(state.ideas);
   const filtered = filteredIdeas();
+  const counts = countsByStatus(filtered);
+  const activeSection = state.filters.section ? sectionByKey(state.filters.section) : null;
+  const title = activeSection ? `${escapeHtml(activeSection.icon)} ${escapeHtml(activeSection.name)}` : 'Лента знаний';
+  const subtitle = activeSection
+    ? `${escapeHtml(activeSection.description || 'Раздел проекта.')} · ${filtered.length} записей`
+    : 'Единое место для идей, решений, вопросов и правок. Запись можно привязать к разделу, приложить картинку или документ и отправить агенту.';
   main.innerHTML = `
     <div class="page-head">
       <div>
-        <h1>Лента знаний</h1>
-        <div class="sub">Единое место для идей, решений, вопросов и правок. Запись можно привязать к разделу, приложить картинку или документ и отправить агенту.</div>
+        <h1>${title}</h1>
+        <div class="sub">${subtitle}</div>
       </div>
       <div class="head-actions">
-        <button class="btn ghost" data-action="focus-composer">+ Новая запись</button>
+        ${activeSection ? '<button class="btn ghost" data-action="view" data-view="sections">← Все разделы</button>' : ''}
+        <button class="btn accent" data-action="focus-composer">+ Новая запись в базу</button>
       </div>
     </div>
     <div class="stat-row">
@@ -452,7 +463,7 @@ function renderFeed() {
       <div class="stat"><span class="dot" style="color:#3ddad7"></span> Реализовано <b>${counts.implemented}</b></div>
       <div class="stat"><span class="dot" style="color:#8ba3c7"></span> Будущее <b>${counts.future}</b></div>
     </div>
-    ${composerHtml()}
+    ${state.composerOpen ? composerHtml() : ''}
     <div class="feed-list" id="idea-list"></div>`;
   renderComposerAttachments();
   renderIdeaList();
@@ -999,6 +1010,7 @@ async function loadProject(slug) {
   state.agents.extra = '';
   state.composerSection = state.sections[0]?.key || '';
   state.composerFiles = [];
+  state.composerOpen = false;
   state.wizardResult = null;
   state.lastImport = null;
   const { ideas } = await api(`/api/projects/${project.id}/ideas?limit=5000`);
@@ -1292,6 +1304,7 @@ document.addEventListener('click', async (event) => {
   if (action === 'view') {
     event.preventDefault();
     state.view = actionEl.dataset.view || 'feed';
+    state.filters.section = '';
     localStorage.setItem('kb.view', state.view);
     if (state.view === 'agents') refreshAgentRuns();
     if (state.view === 'graph') loadGraph();
@@ -1302,6 +1315,8 @@ document.addEventListener('click', async (event) => {
   }
   if (action === 'section' || action === 'section-open') {
     state.filters.section = actionEl.dataset.section || '';
+    state.composerSection = state.filters.section || state.sections[0]?.key || '';
+    state.composerOpen = false;
     state.view = 'feed';
     localStorage.setItem('kb.view', state.view);
     renderSidebar();
@@ -1325,9 +1340,16 @@ document.addEventListener('click', async (event) => {
   }
   if (action === 'focus-composer') {
     state.view = 'feed';
+    state.composerSection = state.filters.section || state.composerSection || state.sections[0]?.key || '';
+    state.composerOpen = true;
     renderSidebar();
     renderMain();
     setTimeout(() => $('#composer input[name="title"]')?.focus(), 60);
+    return;
+  }
+  if (action === 'close-composer') {
+    state.composerOpen = false;
+    renderMain();
     return;
   }
   if (action === 'select') {
@@ -1538,11 +1560,10 @@ document.addEventListener('submit', async (event) => {
       if (errors?.length) toast(errors[0].error, 'err');
       state.composerFiles = [];
       state.composerSection = payload.section;
-      form.reset();
-      form.querySelector('[name="section"]').value = payload.section;
+      state.composerOpen = false;
       await reloadIdeas();
       renderSidebar();
-      renderIdeaList();
+      renderMain();
       await selectIdea(idea.id);
       toast('Запись сохранена', 'ok');
     } catch (error) {

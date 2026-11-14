@@ -256,6 +256,7 @@ label.field > span { letter-spacing: .6px; }
   margin-bottom: 20px;
 }
 .composer-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.composer-top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .composer-title { font-size: 12px; font-weight: 700; letter-spacing: .4px; }
 .composer-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
 .composer .field-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
