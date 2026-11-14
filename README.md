@@ -65,6 +65,9 @@ data/
 projects/
 └─ <slug>/
    └─ vault/      Obsidian-vault проекта
+
+exports/
+└─ <slug>/        vault, если export_path проекта задан вне projects/
 ```
 
 `data/`, `projects/*` и `backups/` исключены из Git через `.gitignore`.
@@ -73,6 +76,7 @@ projects/
 
 - `data/` — база и вложения;
 - `projects/` — vault-ы проектов;
+- `exports/` — vault-ы проектов, у которых `export_path` задан вне `projects/`;
 - при необходимости `backups/`.
 
 Код можно перенести отдельно: после `npm start` он создаст пустую базу и предложит создать проект.
@@ -171,7 +175,7 @@ curl http://127.0.0.1:4317/api/ideas/idea_...
 
 ### 6. Obsidian
 
-Vault проекта: `projects/<slug>/vault`.
+Vault проекта: значение `export_path` проекта (обычно `projects/<slug>/vault` или `exports/<slug>`).
 
 Экспорт:
 
@@ -300,13 +304,13 @@ npm run backup
 .\backup.ps1
 ```
 
-Скрипт складывает снимок базы, uploads, vault-ы и код в `backups/project-os-YYYYMMDD-HHMMSS.zip`.
+Скрипт складывает снимок базы, uploads, vault-ы (`projects/` и `exports/`) и код в `backups/project-os-YYYYMMDD-HHMMSS.zip`.
 
 Важно: кнопка «Экспорт» в шапке — это экспорт в Obsidian vault, а не бэкап базы. Полный бэкап делается командой `npm run backup`.
 
 ### Перенос на другой компьютер
 
-Самый простой способ: остановить сервер и скопировать папки `data/` и `projects/` в такую же папку на другом ПК. База, вложения и vault-ы переедут целиком.
+Самый простой способ: остановить сервер и скопировать папки `data/`, `projects/` и `exports/` (если есть) в такую же папку на другом ПК. База, вложения и vault-ы переедут целиком.
 
 Если используется архив `project-os-*.zip`:
 
@@ -314,8 +318,9 @@ npm run backup
 2. Скопируйте `backup-snapshot.db` в `data/kb.db`.
 3. Скопируйте `uploads/` в `data/uploads/`.
 4. Скопируйте `projects/` в `projects/`.
-5. Удалите старые `data/kb.db-wal` и `data/kb.db-shm`, если они остались.
-6. Код берите из GitHub, а не из архива: в архиве может быть старая версия.
+5. Скопируйте `exports/` в `exports/`, если он есть в архиве.
+6. Удалите старые `data/kb.db-wal` и `data/kb.db-shm`, если они остались.
+7. Код берите из GitHub, а не из архива: в архиве может быть старая версия.
 
 ### Обновление трекера на другом ПК
 
@@ -328,7 +333,7 @@ git pull --ff-only
 npm start
 ```
 
-`data/` и `projects/` не затрагиваются. Если папка не git-репозиторий, проще клонировать репозиторий заново и перенести в него `data/` и `projects/`.
+`data/`, `projects/` и `exports/` не затрагиваются. Если папка не git-репозиторий, проще клонировать репозиторий заново и перенести в него `data/`, `projects/` и `exports/` (если есть).
 
 Очистка orphan-папок вложений:
 

@@ -14,6 +14,7 @@ try {
     "data\backup-snapshot.db",
     "data\uploads",
     "projects",
+    "exports",
     "lib",
     "public",
     "server.mjs",
