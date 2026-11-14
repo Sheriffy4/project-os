@@ -288,13 +288,13 @@ function countsByStatus(list = state.ideas) {
   return result;
 }
 
-function filteredIdeas(includeComments = false) {
+function filteredIdeas(includeComments = false, ignoreStatus = false) {
   const f = state.filters;
   const q = f.q.trim().toLowerCase();
   return state.ideas.filter((idea) => {
     if (!includeComments && idea.kind === 'comment' && f.kind !== 'comment') return false;
     if (f.section && idea.section_key !== f.section) return false;
-    if (f.status && idea.status !== f.status) return false;
+    if (!ignoreStatus && f.status && idea.status !== f.status) return false;
     if (f.kind && idea.kind !== f.kind) return false;
     if (f.entity && idea.entity_state !== f.entity) return false;
     if (f.tag && !(idea.tags || []).includes(f.tag)) return false;
@@ -306,6 +306,13 @@ function filteredIdeas(includeComments = false) {
     }
     return true;
   });
+}
+
+function statusStatButton(status, label, color, counts) {
+  const active = state.filters.status === status;
+  return `<button type="button" class="stat stat-btn ${active ? 'active' : ''}" data-action="filter-status" data-status="${status}" aria-pressed="${active}" title="${active ? 'Сбросить фильтр' : `Показать: ${label}`}">
+    <span class="dot" style="color:${color}"></span> ${label} <b>${counts[status] || 0}</b>
+  </button>`;
 }
 
 function statPills(counts) {
@@ -438,7 +445,7 @@ function composerHtml() {
 function renderFeed() {
   const main = $('#main');
   const filtered = filteredIdeas();
-  const counts = countsByStatus(filtered);
+  const counts = countsByStatus(filteredIdeas(false, true));
   const activeSection = state.filters.section ? sectionByKey(state.filters.section) : null;
   const title = activeSection ? `${escapeHtml(activeSection.icon)} ${escapeHtml(activeSection.name)}` : 'Лента знаний';
   const subtitle = activeSection
@@ -456,12 +463,12 @@ function renderFeed() {
       </div>
     </div>
     <div class="stat-row">
-      <div class="stat"><span class="dot" style="color:#a3e635"></span> Принято <b>${counts.accepted}</b></div>
-      <div class="stat"><span class="dot" style="color:#ffc53d"></span> Доработать <b>${counts.needs_rework}</b></div>
-      <div class="stat"><span class="dot" style="color:#b06ae8"></span> Уточнить <b>${counts.clarify}</b></div>
-      <div class="stat"><span class="dot" style="color:#8a7764"></span> Входящие <b>${counts.inbox}</b></div>
-      <div class="stat"><span class="dot" style="color:#3ddad7"></span> Реализовано <b>${counts.implemented}</b></div>
-      <div class="stat"><span class="dot" style="color:#8ba3c7"></span> Будущее <b>${counts.future}</b></div>
+      ${statusStatButton('accepted', 'Принято', '#a3e635', counts)}
+      ${statusStatButton('needs_rework', 'Доработать', '#ffc53d', counts)}
+      ${statusStatButton('clarify', 'Уточнить', '#b06ae8', counts)}
+      ${statusStatButton('inbox', 'Входящие', '#8a7764', counts)}
+      ${statusStatButton('implemented', 'Реализовано', '#3ddad7', counts)}
+      ${statusStatButton('future', 'Будущее', '#8ba3c7', counts)}
     </div>
     ${state.composerOpen ? composerHtml() : ''}
     <div class="feed-list" id="idea-list"></div>`;
@@ -1328,6 +1335,13 @@ document.addEventListener('click', async (event) => {
     state.agents.selected = new Set([actionEl.dataset.section]);
     state.agents.brief = '';
     state.view = 'agents';
+    renderSidebar();
+    renderMain();
+    return;
+  }
+  if (action === 'filter-status') {
+    const status = actionEl.dataset.status || '';
+    state.filters.status = state.filters.status === status ? '' : status;
     renderSidebar();
     renderMain();
     return;
