@@ -55,6 +55,77 @@ function text(res, status, body, type = 'text/plain; charset=utf-8') {
   res.end(body);
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+async function serveProjectSource(req, res, url, project) {
+  const sourcePath = project.meta?.spec || project.meta?.source_path;
+  if (!sourcePath) throw new HttpError(404, 'У проекта не задан source_path/spec');
+  if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) {
+    throw new HttpError(404, `Файл спецификации не найден: ${sourcePath}`);
+  }
+  const source = await readFile(sourcePath, 'utf8');
+  if (url.searchParams.get('download') === '1') {
+    res.writeHead(200, {
+      'Content-Type': 'text/markdown; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(sourcePath.split(/[\\/]/).pop() || 'source.md')}"`,
+      'Cache-Control': 'no-store',
+    });
+    res.end(source);
+    return;
+  }
+  const lines = source.replace(/\r/g, '').split('\n');
+  const requested = Number(url.searchParams.get('line') || 1);
+  const activeLine = Math.min(lines.length, Math.max(1, Number.isFinite(requested) ? requested : 1));
+  const rows = lines.map((line, index) => {
+    const number = index + 1;
+    const body = escapeHtml(line) || '&nbsp;';
+    return `<span class="line${number === activeLine ? ' active' : ''}" id="L${number}"><span class="no">${number}</span>${body}</span>`;
+  }).join('\n');
+  const html = `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(project.name)} — источник</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #111318; color: #d7dae0; font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; gap: 16px; align-items: center; justify-content: space-between; padding: 10px 16px; background: #181b22; border-bottom: 1px solid #2a2f3a; }
+  header strong { color: #ffc53d; font-family: system-ui, sans-serif; }
+  header .path { color: #8b93a3; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header a { color: #3ddad7; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  main { padding: 12px 0 40px; }
+  .line { display: block; white-space: pre-wrap; overflow-wrap: anywhere; padding: 0 16px 0 0; }
+  .line .no { display: inline-block; width: 64px; padding-right: 14px; margin-right: 14px; text-align: right; color: #5f6878; border-right: 1px solid #252a34; user-select: none; }
+  .line.active { background: #2c2412; box-shadow: inset 3px 0 0 #ffc53d; }
+  .line.active .no { color: #ffc53d; }
+  .line:hover { background: #1a1e26; }
+</style>
+</head>
+<body>
+<header>
+  <div><strong>${escapeHtml(project.name)}</strong> <span class="path">${escapeHtml(sourcePath)}</span></div>
+  <div><a href="?line=${activeLine}&download=1">Скачать оригинал</a></div>
+</header>
+<main><pre style="margin:0">${rows}</pre></main>
+<script>
+  const target = document.getElementById('L${activeLine}');
+  if (target) target.scrollIntoView({ block: 'center' });
+</script>
+</body>
+</html>`;
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(html);
+}
+
 async function readBody(req) {
   const chunks = [];
   let size = 0;
@@ -202,6 +273,13 @@ async function handleApi(req, res, url) {
       linkTypes: db.LINK_TYPES,
       defaultSections: DEFAULT_SECTIONS,
     });
+  }
+
+  const sourceMatch = p.match(/^\/api\/projects\/([^/]+)\/source$/);
+  if (sourceMatch) {
+    if (method !== 'GET') throw new HttpError(405, 'Метод не поддерживается');
+    const project = projectOr404(decodeURIComponent(sourceMatch[1]));
+    return serveProjectSource(req, res, url, project);
   }
 
   if (p === '/api/projects' && method === 'GET') {
