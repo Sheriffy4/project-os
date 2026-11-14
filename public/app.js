@@ -254,6 +254,28 @@ async function copyText(text) {
   }
 }
 
+/* ── Ссылки на карточки ─────────────────────────────────── */
+
+function ideaLink(id) {
+  return `${location.origin}${location.pathname}${location.search}#/idea/${encodeURIComponent(id)}`;
+}
+
+function ideaIdFromHash(hash = location.hash) {
+  const match = String(hash).match(/^#\/idea\/([^/?#]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function writeIdeaHash(id) {
+  const next = `#/idea/${encodeURIComponent(id)}`;
+  if (location.hash === next) return;
+  history.replaceState(null, '', `${location.pathname}${location.search}${next}`);
+}
+
+function clearIdeaHash() {
+  if (!ideaIdFromHash()) return;
+  history.replaceState(null, '', `${location.pathname}${location.search}`);
+}
+
 function sectionByKey(key) {
   return state.sections.find((s) => s.key === key) || null;
 }
@@ -522,6 +544,14 @@ function renderInspector() {
       <div class="inspector-meta">${statusBadge(idea.status)} <span class="pill">${escapeHtml(section?.icon || '•')} ${escapeHtml(section?.name || idea.section_name)}</span>${idea.entity_state !== 'n/a' ? `<span class="pill">${escapeHtml(ENTITY[idea.entity_state] || idea.entity_state)}</span>` : ''}</div>
       <div class="inspector-title">${escapeHtml(idea.title)}</div>
       <div class="hint">${idea.author ? `Автор: ${escapeHtml(idea.author)} · ` : ''}${fmtDate(idea.created_at)}${idea.source ? ` · ${escapeHtml(idea.source)}` : ''}</div>
+      <div class="idea-ref">
+        <span class="idea-ref-label">Код карточки</span>
+        <code title="Постоянный ID записи. Используется в CLI и API.">${escapeHtml(idea.id)}</code>
+        <div class="idea-ref-actions">
+          <button class="btn small ghost" data-action="copy-idea-id" title="Скопировать ID">Копировать ID</button>
+          <button class="btn small ghost" data-action="copy-idea-link" title="Скопировать ссылку на карточку">🔗 Ссылка</button>
+        </div>
+      </div>
       <div class="inspector-actions">
         <button class="btn small" data-action="edit-idea">Редактировать</button>
         <button class="btn small ghost" data-action="copy-idea">Скопировать для агента</button>
@@ -997,6 +1027,7 @@ async function refreshSelected() {
 async function selectIdea(id) {
   state.selectedId = id;
   state.inspectorOpen = true;
+  writeIdeaHash(id);
   const inspector = $('#inspector');
   if (inspector) inspector.classList.add('open');
   try {
@@ -1009,6 +1040,30 @@ async function selectIdea(id) {
   if (state.view === 'board') renderBoard();
   renderInspector();
   if (window.innerWidth <= 1120) inspector?.scrollTo({ top: 0 });
+}
+
+async function openIdeaFromHash() {
+  const id = ideaIdFromHash();
+  if (!id) return false;
+  try {
+    const { idea } = await api(`/api/ideas/${encodeURIComponent(id)}`);
+    if (!state.project || state.project.slug !== idea.project_slug) {
+      await loadProject(idea.project_slug);
+    }
+    state.selectedId = idea.id;
+    state.selectedIdea = idea;
+    state.inspectorOpen = true;
+    if (!['feed', 'board'].includes(state.view)) {
+      state.view = 'feed';
+      localStorage.setItem('kb.view', state.view);
+    }
+    renderAll();
+    $('#inspector')?.classList.add('open');
+    return true;
+  } catch {
+    toast(`Карточка не найдена: ${id}`, 'err');
+    return false;
+  }
 }
 
 async function changeStatus(id, status, reason = '') {
@@ -1035,6 +1090,7 @@ async function deleteIdea() {
     await api(`/api/ideas/${state.selectedIdea.id}`, { method: 'DELETE' });
     state.selectedId = null;
     state.selectedIdea = null;
+    clearIdeaHash();
     await reloadIdeas();
     renderAll();
     toast('Запись удалена', 'ok');
@@ -1282,6 +1338,7 @@ document.addEventListener('click', async (event) => {
   if (action === 'close-inspector') {
     state.inspectorOpen = false;
     $('#inspector')?.classList.remove('open');
+    clearIdeaHash();
     return;
   }
   if (action === 'edit-idea') {
@@ -1291,8 +1348,34 @@ document.addEventListener('click', async (event) => {
   if (action === 'copy-idea') {
     if (!state.selectedIdea) return;
     const idea = state.selectedIdea;
-    const text = `# ${idea.title}\n\nРаздел: ${idea.section_name}\nСтатус: ${STATUS[idea.status]?.label || idea.status}\nТип: ${KIND[idea.kind] || idea.kind}\nТеги: ${(idea.tags || []).join(', ')}\n\n${idea.body}\n\nСвязи: ${(idea.links || []).map((l) => l.title).join('; ') || '—'}`;
+    const text = [
+      `Карточка: ${idea.title}`,
+      `ID: ${idea.id}`,
+      `Ссылка: ${ideaLink(idea.id)}`,
+      `API: ${location.origin}/api/ideas/${encodeURIComponent(idea.id)}`,
+      `Проект: ${idea.project_name} (${idea.project_slug})`,
+      `Раздел: ${idea.section_name}`,
+      `Статус: ${STATUS[idea.status]?.label || idea.status}`,
+      `Тип: ${KIND[idea.kind] || idea.kind}`,
+      `Теги: ${(idea.tags || []).join(', ')}`,
+      '',
+      idea.body,
+      '',
+      `Связи: ${(idea.links || []).map((l) => l.title).join('; ') || '—'}`,
+      '',
+      `CLI: node cli.mjs show --id ${idea.id}`,
+    ].join('\n');
     await copyText(text);
+    return;
+  }
+  if (action === 'copy-idea-id') {
+    if (!state.selectedIdea) return;
+    await copyText(state.selectedIdea.id);
+    return;
+  }
+  if (action === 'copy-idea-link') {
+    if (!state.selectedIdea) return;
+    await copyText(ideaLink(state.selectedIdea.id));
     return;
   }
   if (action === 'delete-idea') {
@@ -1598,6 +1681,7 @@ document.addEventListener('change', async (event) => {
   if (target.id === 'project-select' || target.id === 'mobile-project-select') {
     try {
       await loadProject(target.value);
+      clearIdeaHash();
       renderAll();
       $('#sidebar')?.classList.remove('open');
     } catch (error) {
@@ -1806,6 +1890,17 @@ document.addEventListener('dragstart', (event) => {
 
 /* ── Init ───────────────────────────────────────────────── */
 
+window.addEventListener('hashchange', () => {
+  if (ideaIdFromHash()) {
+    openIdeaFromHash();
+    return;
+  }
+  if (state.inspectorOpen) {
+    state.inspectorOpen = false;
+    $('#inspector')?.classList.remove('open');
+  }
+});
+
 async function init() {
   try {
     const meta = await api('/api/meta');
@@ -1823,6 +1918,7 @@ async function init() {
     await loadProject(project.slug);
     if (!NAV.some(([view]) => view === state.view)) state.view = 'feed';
     renderAll();
+    await openIdeaFromHash();
     const version = $('#version');
     if (version) version.textContent = `v0.2 · ${meta.statuses.length} статусов · SQLite`;
   } catch (error) {

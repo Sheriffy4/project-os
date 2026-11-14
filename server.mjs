@@ -133,10 +133,11 @@ function serveFile(res, filePath, contentType) {
     json(res, 404, { error: 'Файл не найден' });
     return;
   }
+  const noStore = /\.(html|js|css)$/i.test(filePath);
   res.writeHead(200, {
     'Content-Type': contentType || MIME[extname(filePath).toLowerCase()] || 'application/octet-stream',
     'Content-Length': st.size,
-    'Cache-Control': filePath.endsWith('.html') ? 'no-store' : 'public, max-age=3600',
+    'Cache-Control': noStore ? 'no-store' : 'public, max-age=3600',
   });
   createReadStream(filePath).pipe(res);
 }

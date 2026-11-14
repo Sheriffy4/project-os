@@ -6,6 +6,7 @@ local/
 # Local project data (vaults, uploads, exports) is intentionally not committed.
 projects/*
 !projects/.gitkeep
+exports/
 
 # Game-specific / local-only seed and migration files.
 # The reusable tracker works with an empty database and the new-project wizard.
