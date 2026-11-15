@@ -1624,6 +1624,7 @@ document.addEventListener('click', async (event) => {
   if (action === 'project-files') {
     closeModal();
     state.view = 'files';
+    state.filters.section = '';
     localStorage.setItem('kb.view', state.view);
     await refreshProjectFiles();
     renderSidebar();
