@@ -73,8 +73,8 @@ try {
   list --project <slug> [--section <key>] [--status <status>] [--kind <kind>] [--tag <tag>] [--q <text>] [--limit 100]
   search --project <slug> --q <text>
   show --id <idea_id>
-  add --project <slug> --section <key> --title "..." [--body "..."] [--body-file file] [--stdin] [--status inbox] [--kind idea] [--tags a,b] [--author user] [--source ...] [--parent id] [--priority high] [--entity-state new]
-  update --id <idea_id> [--title "..."] [--body "..."] [--status accepted] [--rejection-reason "..."] [--tags a,b]
+  add --project <slug> --section <key> --title "..." [--body "..."] [--body-file file] [--stdin] [--status inbox] [--kind idea] [--tags a,b] [--author user] [--source ...] [--parent id] [--priority high] [--entity-state new] [--resolution "..."] [--proof "..."]
+  update --id <idea_id> [--title "..."] [--body "..."] [--status accepted] [--rejection-reason "..."] [--resolution "..."] [--proof "..."] [--tags a,b]
   brief --project <slug> [--section <key>] [--task audit|refine|expand|balance|art|narrative|tech] [--extra "..."] [--no-save]
   import --project <slug> [--vault <path>] [--dry-run]
   export --project <slug>
@@ -82,7 +82,8 @@ try {
 
 Пример:
   node cli.mjs list --project my-project --section events --status accepted
-  node cli.mjs add --project my-project --section monsters --title "Новый враг" --body "..." --tags "враг,идея"`);
+  node cli.mjs add --project my-project --section monsters --title "Новый враг" --body "..." --tags "враг,идея"
+  node cli.mjs update --id idea_... --status implemented --resolution "Что сделано" --proof "src/main.asm:10-40"`);
     process.exit(0);
   }
 
@@ -163,6 +164,8 @@ try {
       tags: opts.tags ? String(opts.tags).split(',').map((t) => t.trim()).filter(Boolean) : [],
       parent_id: opts.parent || null,
       rejection_reason: opts['rejection-reason'] || '',
+      resolution: opts.resolution || '',
+      proof: opts.proof || '',
     });
     out({ ok: true, id: idea.id, title: idea.title, section: idea.section_key, status: idea.status });
     process.exit(0);
@@ -175,13 +178,22 @@ try {
       process.exit(1);
     }
     const patch = {};
-    for (const key of ['title', 'body', 'status', 'kind', 'priority', 'entity-state', 'author', 'source', 'rejection-reason']) {
+    for (const key of ['title', 'body', 'status', 'kind', 'priority', 'entity-state', 'author', 'source', 'rejection-reason', 'resolution', 'proof']) {
       if (opts[key] !== undefined) {
         const target = key === 'entity-state' ? 'entity_state' : key === 'rejection-reason' ? 'rejection_reason' : key;
         patch[target] = opts[key];
       }
     }
     if (opts.tags) patch.tags = String(opts.tags).split(',').map((t) => t.trim()).filter(Boolean);
+    const nextStatus = patch.status ?? idea.status;
+    if (nextStatus === 'rejected' && !String(patch.rejection_reason ?? idea.rejection_reason ?? '').trim()) {
+      console.error('Для статуса rejected нужна причина: --rejection-reason');
+      process.exit(1);
+    }
+    if (nextStatus === 'implemented' && idea.status !== 'implemented' && !String(patch.resolution ?? idea.resolution ?? '').trim()) {
+      console.error('Для статуса implemented нужно описание результата: --resolution');
+      process.exit(1);
+    }
     const updated = db.updateIdea(database, idea.id, patch);
     out({ ok: true, id: updated.id, status: updated.status, title: updated.title });
     process.exit(0);

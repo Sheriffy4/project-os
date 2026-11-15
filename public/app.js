@@ -301,7 +301,7 @@ function filteredIdeas(includeComments = false, ignoreStatus = false) {
     if (f.entity && idea.entity_state !== f.entity) return false;
     if (f.tag && !(idea.tags || []).includes(f.tag)) return false;
     if (q) {
-      const hay = [idea.title, idea.body, (idea.tags || []).join(' '), idea.source, idea.author, idea.section_name]
+      const hay = [idea.title, idea.body, idea.resolution, idea.proof, (idea.tags || []).join(' '), idea.source, idea.author, idea.section_name]
         .join(' ')
         .toLowerCase();
       if (!hay.includes(q)) return false;
@@ -351,7 +351,10 @@ function renderSidebar() {
   const card = $('#project-card');
   if (card) {
     card.innerHTML = `
-      <div class="pc-name">${escapeHtml(project.name)}</div>
+      <div class="pc-head">
+        <div class="pc-name">${escapeHtml(project.name)}</div>
+        <button class="pc-gear" data-action="project-settings" title="Настройки проекта" aria-label="Настройки проекта">⚙</button>
+      </div>
       <div class="pc-desc">${escapeHtml(project.description || '')}</div>
       <div class="pc-meta">
         <span class="pill accent">${escapeHtml(project.stage || 'concept')}</span>
@@ -565,6 +568,9 @@ function renderInspector() {
   const attachments = idea.attachments || [];
   const links = idea.links || [];
   const children = idea.children || [];
+  const resultText = idea.status === 'rejected' ? idea.rejection_reason : idea.resolution;
+  const resultTitle = idea.status === 'rejected' ? 'Причина отказа' : 'Результат';
+  const showResult = Boolean(resultText || idea.proof || idea.status === 'implemented' || idea.status === 'rejected');
   box.innerHTML = `
     <div class="inspector-head">
       <span class="label">Карточка · ${escapeHtml(KIND[idea.kind] || idea.kind)}</span>
@@ -590,11 +596,16 @@ function renderInspector() {
       </div>
       <label class="field"><span>Статус</span><select class="input" id="inspector-status">${statusOptions(idea.status)}</select></label>
       <label class="field"><span>Приоритет</span><select class="input" id="inspector-priority">${priorityOptions(idea.priority)}</select></label>
-      ${idea.rejection_reason && idea.status === 'rejected' ? `<div class="inspector-section-title">Причина отказа</div><div class="hint">${escapeHtml(idea.rejection_reason)}</div>` : ''}
     </div>
 
     <div class="inspector-section-title">Суть</div>
     <div class="md">${markdown(idea.body || '_Описание пока пустое._')}</div>
+
+    ${showResult ? `<div class="inspector-section-title">${resultTitle}</div>
+    <div class="md">${resultText ? markdown(resultText) : '<span class="hint">Не указано. Заполните результат и пруфы.</span>'}</div>
+    <div class="inspector-section-title">Пруфы</div>
+    <div class="md">${idea.proof ? markdown(idea.proof) : '<span class="hint">Не указаны. Добавьте путь к файлу, строки кода, ссылку или скриншот.</span>'}</div>
+    <button class="btn small ghost" data-action="edit-result">Редактировать результат и пруфы</button>` : ''}
 
     <div class="inspector-section-title">Теги</div>
     <div class="idea-footer">${(idea.tags || []).map((tag) => `<span class="tag">#${escapeHtml(tag)}</span>`).join('') || '<span class="hint">Нет тегов</span>'}</div>
@@ -761,6 +772,61 @@ function renderFiles() {
         </div>`).join('')}
     </div>
     <div class="hint" style="margin-top:14px">AGENTS.md — основной источник правил. CLAUDE.md, GEMINI.md, .cursor/rules и .github/copilot-instructions.md — короткие обёртки, которые требуют прочитать AGENTS.md. Файлы лежат в vault проекта; экспорт не перезаписывает AGENTS.md и README.md.</div>`;
+}
+
+function splitList(value) {
+  return String(value || '').split(/[,;]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function openProjectSettings() {
+  const p = state.project;
+  if (!p) return;
+  const meta = p.meta || {};
+  const list = (value) => (Array.isArray(value) ? value.join(', ') : (value || ''));
+  const files = state.projectFiles || [];
+  const agents = files.find((file) => file.key === 'agents');
+  const plan = files.find((file) => file.key === 'plan');
+  const statusPill = (file) => `<span class="pill ${file?.exists ? 'green' : 'amber'}">${file?.exists ? 'есть' : 'нет'}</span>`;
+  openModal(`<button class="modal-close" data-action="close-modal">×</button>
+    <h2>Настройки проекта</h2>
+    <div class="sub">${escapeHtml(p.name)} · <code>${escapeHtml(p.slug)}</code></div>
+    <form id="project-settings-form" data-id="${escapeHtml(p.id)}">
+      <div class="form-grid">
+        <label class="field full"><span>Название</span><input class="input" name="name" value="${escapeHtml(p.name)}" required></label>
+        <label class="field full"><span>Описание / питч</span><textarea class="textarea" name="description" rows="3">${escapeHtml(p.description || '')}</textarea></label>
+        <label class="field"><span>Стадия</span><input class="input" name="stage" value="${escapeHtml(p.stage || '')}"></label>
+        <label class="field"><span>Жанр</span><input class="input" name="genre" value="${escapeHtml(meta.genre || '')}"></label>
+        <label class="field full"><span>Платформы (через запятую)</span><input class="input" name="platforms" value="${escapeHtml(list(meta.platforms))}"></label>
+        <label class="field full"><span>Референсы (через запятую)</span><input class="input" name="references" value="${escapeHtml(list(meta.references))}"></label>
+        <label class="field full"><span>Столпы (через запятую)</span><input class="input" name="pillars" value="${escapeHtml(list(meta.pillars))}"></label>
+        <label class="field full"><span>Аудитория</span><input class="input" name="audience" value="${escapeHtml(meta.audience || '')}"></label>
+        <label class="field full"><span>Vault / папка проекта</span><input class="input" name="export_path" value="${escapeHtml(p.export_path || '')}"><div class="hint">Путь к Obsidian-vault. Файлы автоматически не переносятся.</div></label>
+        <label class="field full"><span>Исходный код (repo)</span><input class="input" name="repo" value="${escapeHtml(meta.repo || '')}"><div class="hint">Абсолютный путь к папке с исходниками игры.</div></label>
+        <label class="field full"><span>Главный документ (spec)</span><input class="input" name="spec" value="${escapeHtml(meta.spec || '')}"><div class="hint">Абсолютный путь к главному md; используется просмотрщиком исходника.</div></label>
+      </div>
+      <div class="project-settings-files">
+        <div class="ps-file-row">
+          <div><b>AGENTS.md</b> ${statusPill(agents)}<div class="hint">Главные правила для ИИ-агентов.</div></div>
+          <div class="ps-file-actions">
+            <button type="button" class="btn small ghost" data-action="open-file" data-file="agents">${agents?.exists ? 'Открыть' : 'Создать'}</button>
+            <button type="button" class="btn small ghost" data-action="copy-file-prompt" data-file="agents">Промпт</button>
+          </div>
+        </div>
+        <div class="ps-file-row">
+          <div><b>PLAN.md</b> ${statusPill(plan)}<div class="hint">Базовый план реализации.</div></div>
+          <div class="ps-file-actions">
+            <button type="button" class="btn small ghost" data-action="open-file" data-file="plan">${plan?.exists ? 'Открыть' : 'Создать'}</button>
+            <button type="button" class="btn small ghost" data-action="copy-file-prompt" data-file="plan">Промпт</button>
+          </div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:10px">Промпт — готовый текст для ИИ-агента: он создаст или обновит файл и заведёт задачи в трекере.</div>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" data-action="project-files">Все файлы проекта</button>
+        <button type="button" class="btn ghost" data-action="close-modal">Отмена</button>
+        <button type="submit" class="btn accent">Сохранить</button>
+      </div>
+    </form>`, 'modal-wide');
 }
 
 async function openFileEditor(key) {
@@ -1229,9 +1295,9 @@ async function openIdeaFromHash() {
   }
 }
 
-async function changeStatus(id, status, reason = '') {
+async function changeStatus(id, status, patch = {}) {
   try {
-    await api(`/api/ideas/${id}`, { method: 'PATCH', body: { status, rejection_reason: status === 'rejected' ? reason : '' } });
+    await api(`/api/ideas/${id}`, { method: 'PATCH', body: { status, ...patch } });
     toast(`Статус: ${STATUS[status]?.label || status}`, 'ok');
     await reloadIdeas();
     await refreshSelected();
@@ -1244,6 +1310,44 @@ async function changeStatus(id, status, reason = '') {
     toast(error.message, 'err');
     renderInspector();
   }
+}
+
+function requestStatusChange(id, status) {
+  if (status === 'implemented' || status === 'rejected') {
+    openStatusModal(id, status);
+    return;
+  }
+  changeStatus(id, status);
+}
+
+function openStatusModal(id, status, { editOnly = false } = {}) {
+  const idea = state.selectedIdea?.id === id
+    ? state.selectedIdea
+    : state.ideas.find((item) => item.id === id);
+  if (!idea) {
+    toast('Карточка не найдена', 'err');
+    return;
+  }
+  const isRejected = status === 'rejected';
+  const text = isRejected ? (idea.rejection_reason || '') : (idea.resolution || '');
+  const proof = idea.proof || '';
+  const title = editOnly ? 'Результат и пруфы' : `Статус: ${STATUS[status]?.label || status}`;
+  const subtitle = isRejected
+    ? 'Укажи причину отказа. Пруфы опциональны, но помогают понять контекст.'
+    : 'Опиши, что именно сделано, и добавь пруфы: путь к файлу, строки кода, ссылку или скриншот. Без результата задачу нельзя закрыть.';
+  openModal(`<button class="modal-close" data-action="cancel-status">×</button>
+    <h2>${escapeHtml(title)}</h2>
+    <div class="sub">${escapeHtml(idea.title)}<br>${escapeHtml(subtitle)}</div>
+    <form id="status-form" data-id="${escapeHtml(idea.id)}" data-status="${escapeHtml(status)}" data-edit-only="${editOnly ? '1' : '0'}">
+      <label class="field full"><span>${isRejected ? 'Причина отказа' : 'Что сделано'}</span><textarea class="textarea" name="text" rows="4" required>${escapeHtml(text)}</textarea></label>
+      <label class="field full"><span>Пруфы: файлы, строки, ссылки, скриншоты</span><textarea class="textarea" name="proof" rows="4" placeholder="src/main.asm:120-145&#10;https://...&#10;Скриншот прикреплён в карточке">${escapeHtml(proof)}</textarea></label>
+      <div class="hint">Скриншоты можно прикрепить в блоке «Вложения» после сохранения.</div>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" data-action="cancel-status">Отмена</button>
+        <button type="submit" class="btn accent">${editOnly ? 'Сохранить' : 'Подтвердить статус'}</button>
+      </div>
+    </form>`);
+  setTimeout(() => $('#status-form textarea[name="text"]')?.focus(), 60);
 }
 
 async function deleteIdea() {
@@ -1335,6 +1439,8 @@ function openEditModal() {
         <label class="field"><span>Приоритет</span><select class="input" name="priority">${priorityOptions(idea.priority)}</select></label>
         <label class="field"><span>Теги</span><input class="input" name="tags" value="${escapeHtml((idea.tags || []).join(', '))}"></label>
         <label class="field full"><span>Текст</span><textarea class="textarea" name="body" rows="8">${escapeHtml(idea.body)}</textarea></label>
+        <label class="field full"><span>Результат / что сделано</span><textarea class="textarea" name="resolution" rows="3">${escapeHtml(idea.resolution || '')}</textarea></label>
+        <label class="field full"><span>Пруфы: файлы, строки, ссылки, скриншоты</span><textarea class="textarea" name="proof" rows="3">${escapeHtml(idea.proof || '')}</textarea></label>
         <label class="field full"><span>Причина отказа (если отклонено)</span><input class="input" name="rejection_reason" value="${escapeHtml(idea.rejection_reason || '')}"></label>
       </div>
       <div class="modal-actions"><button type="button" class="btn ghost" data-action="close-modal">Отмена</button><button class="btn accent" type="submit">Сохранить</button></div>
@@ -1511,6 +1617,19 @@ document.addEventListener('click', async (event) => {
     renderMain();
     return;
   }
+  if (action === 'project-settings') {
+    openProjectSettings();
+    return;
+  }
+  if (action === 'project-files') {
+    closeModal();
+    state.view = 'files';
+    localStorage.setItem('kb.view', state.view);
+    await refreshProjectFiles();
+    renderSidebar();
+    renderMain();
+    return;
+  }
   if (action === 'open-file') {
     await openFileEditor(actionEl.dataset.file);
     return;
@@ -1547,6 +1666,16 @@ document.addEventListener('click', async (event) => {
     state.inspectorOpen = false;
     $('#inspector')?.classList.remove('open');
     clearIdeaHash();
+    return;
+  }
+  if (action === 'edit-result') {
+    if (!state.selectedIdea) return;
+    openStatusModal(state.selectedIdea.id, state.selectedIdea.status, { editOnly: true });
+    return;
+  }
+  if (action === 'cancel-status') {
+    closeModal();
+    renderInspector();
     return;
   }
   if (action === 'edit-idea') {
@@ -1758,6 +1887,75 @@ document.addEventListener('submit', async (event) => {
     return;
   }
 
+  if (form.id === 'project-settings-form') {
+    if (!state.project) return;
+    const p = state.project;
+    const fd = new FormData(form);
+    const meta = {
+      ...p.meta,
+      genre: String(fd.get('genre') || '').trim(),
+      platforms: splitList(fd.get('platforms')),
+      references: splitList(fd.get('references')),
+      pillars: splitList(fd.get('pillars')),
+      audience: String(fd.get('audience') || '').trim(),
+      repo: String(fd.get('repo') || '').trim(),
+      spec: String(fd.get('spec') || '').trim(),
+    };
+    const body = {
+      name: String(fd.get('name') || '').trim(),
+      description: String(fd.get('description') || '').trim(),
+      stage: String(fd.get('stage') || '').trim(),
+      export_path: String(fd.get('export_path') || '').trim(),
+      meta,
+    };
+    try {
+      const { project } = await api(`/api/projects/${p.id}`, { method: 'PATCH', body });
+      const { projects } = await api('/api/projects');
+      state.projects = projects;
+      await loadProject(project.slug);
+      closeModal();
+      renderAll();
+      toast('Настройки проекта сохранены', 'ok');
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+    return;
+  }
+
+  if (form.id === 'status-form') {
+    const id = form.dataset.id;
+    const status = form.dataset.status;
+    const editOnly = form.dataset.editOnly === '1';
+    const fd = new FormData(form);
+    const text = String(fd.get('text') || '').trim();
+    const proof = String(fd.get('proof') || '').trim();
+    if (!text) {
+      return toast(status === 'rejected' ? 'Нужна причина отказа' : 'Нужно описать результат', 'err');
+    }
+    const patch = { proof };
+    if (status === 'rejected') patch.rejection_reason = text;
+    else patch.resolution = text;
+    try {
+      if (editOnly) {
+        await api(`/api/ideas/${id}`, { method: 'PATCH', body: patch });
+        closeModal();
+        await reloadIdeas();
+        await refreshSelected();
+        renderSidebar();
+        if (state.view === 'feed') renderIdeaList();
+        if (state.view === 'board') renderBoard();
+        renderInspector();
+        toast('Результат сохранён', 'ok');
+      } else {
+        await changeStatus(id, status, patch);
+        closeModal();
+      }
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+    return;
+  }
+
   if (form.id === 'file-form') {
     if (!state.project) return;
     const key = form.dataset.file;
@@ -1831,6 +2029,8 @@ document.addEventListener('submit', async (event) => {
       priority: fd.get('priority'),
       tags: String(fd.get('tags') || '').split(',').map((t) => t.trim()).filter(Boolean),
       body: String(fd.get('body') || ''),
+      resolution: String(fd.get('resolution') || ''),
+      proof: String(fd.get('proof') || ''),
       rejection_reason: fd.get('status') === 'rejected' ? String(fd.get('rejection_reason') || '') : '',
     };
     try {
@@ -1951,21 +2151,8 @@ document.addEventListener('change', async (event) => {
   if (target.id === 'inspector-status') {
     const idea = state.selectedIdea;
     if (!idea) return;
-    let reason = '';
-    if (target.value === 'rejected') {
-      const entered = prompt('Причина отказа (обязательно):', idea.rejection_reason || '');
-      if (entered === null) {
-        renderInspector();
-        return;
-      }
-      reason = entered.trim();
-      if (!reason) {
-        toast('Для отказа нужна причина', 'err');
-        renderInspector();
-        return;
-      }
-    }
-    await changeStatus(idea.id, target.value, reason);
+    requestStatusChange(idea.id, target.value);
+    renderInspector();
     return;
   }
   if (target.id === 'inspector-priority') {
@@ -2093,14 +2280,7 @@ document.addEventListener('drop', async (event) => {
     const id = event.dataTransfer.getData('text/plain');
     const status = col.dataset.status;
     if (!id || !status || !STATUS[status]) return;
-    let reason = '';
-    if (status === 'rejected') {
-      const entered = prompt('Причина отказа (обязательно):');
-      if (entered === null) return;
-      reason = entered.trim();
-      if (!reason) return toast('Для отказа нужна причина', 'err');
-    }
-    await changeStatus(id, status, reason);
+    requestStatusChange(id, status);
     return;
   }
 

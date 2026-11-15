@@ -534,8 +534,12 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     const nextStatus = body.status ?? idea.status;
     const nextReason = body.rejection_reason ?? idea.rejection_reason;
+    const nextResolution = body.resolution ?? idea.resolution;
     if (nextStatus === 'rejected' && !String(nextReason || '').trim()) {
       throw new HttpError(400, 'Для отказа нужна причина');
+    }
+    if (nextStatus === 'implemented' && idea.status !== 'implemented' && !String(nextResolution || '').trim()) {
+      throw new HttpError(400, 'Для статуса «Реализовано» нужно описать, что именно сделано');
     }
     return json(res, 200, { idea: db.updateIdea(database, idea.id, body) });
   }

@@ -496,6 +496,16 @@ label.field > span { letter-spacing: .6px; }
 .modal-close { float: right; border: 0; background: transparent; color: var(--dim); font-size: 22px; line-height: 1; }
 
 /* ── Project files ──────────────────────────────────────── */
+.pc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.pc-gear {
+  flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center;
+  border: 1px solid var(--line-soft); border-radius: 8px;
+  background: rgba(255,255,255,.025); color: var(--muted); font-size: 14px; line-height: 1;
+}
+.pc-gear:hover { color: var(--text); border-color: #513b2b; background: rgba(255,255,255,.05); }
+.project-settings-files { margin-top: 14px; border-top: 1px solid var(--line-soft); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.ps-file-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 10px; background: rgba(255,255,255,.015); }
+.ps-file-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .pc-warning {
   width: 100%; margin-top: 8px; text-align: left; cursor: pointer;
   border: 1px solid rgba(255,197,61,.35); border-radius: 9px;
