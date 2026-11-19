@@ -31,7 +31,8 @@ const LINK = {
   source: 'Источник',
 };
 const NAV = [
-  ['feed', '▤', 'Лента'],
+  ['overview', '▤', 'Обзор'],
+  ['feed', '☰', 'Лента'],
   ['board', '▦', 'Доска'],
   ['sections', '◍', 'Разделы'],
   ['agents', '⚑', 'Агенты'],
@@ -48,9 +49,11 @@ const state = {
   ideas: [],
   sections: [],
   projectFiles: [],
+  overview: '',
+  overviewExists: false,
   selectedId: null,
   selectedIdea: null,
-  view: localStorage.getItem('kb.view') || 'feed',
+  view: localStorage.getItem('kb.view') || 'overview',
   filters: { status: '', kind: '', entity: '', tag: '', q: '', section: '' },
   composerFiles: [],
   composerSection: '',
@@ -85,6 +88,24 @@ function inlineMd(value) {
   return x;
 }
 
+function tableCells(line) {
+  return String(line || '').trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+}
+
+function renderMarkdownTable(rows) {
+  if (!rows.length) return '';
+  const cells = rows.map(tableCells);
+  const hasSeparator = cells.length > 1 && cells[1].every((cell) => /^:?-{2,}:?$/.test(cell));
+  const header = cells[0];
+  const body = cells.slice(hasSeparator ? 2 : 1);
+  const headHtml = header.map((cell) => `<th>${inlineMd(cell)}</th>`).join('');
+  const bodyHtml = body
+    .filter((row) => row.some((cell) => cell !== ''))
+    .map((row) => `<tr>${row.map((cell) => `<td>${inlineMd(cell)}</td>`).join('')}</tr>`)
+    .join('');
+  return `<div class="md-table-wrap"><table><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+}
+
 function markdown(value) {
   const lines = String(value || '').replace(/\r/g, '').split('\n');
   const out = [];
@@ -92,6 +113,7 @@ function markdown(value) {
   let code = [];
   let listType = null;
   let para = [];
+  let table = null;
   const flushPara = () => {
     if (para.length) {
       out.push(`<p>${para.map(inlineMd).join('<br>')}</p>`);
@@ -105,6 +127,10 @@ function markdown(value) {
     }
   };
   for (const line of lines) {
+    if (table && !line.trim().startsWith('|')) {
+      out.push(renderMarkdownTable(table));
+      table = null;
+    }
     if (line.trim().startsWith('```')) {
       if (inCode) {
         out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
@@ -119,6 +145,13 @@ function markdown(value) {
     }
     if (inCode) {
       code.push(line);
+      continue;
+    }
+    if (line.trim().startsWith('|')) {
+      flushPara();
+      closeList();
+      if (!table) table = [];
+      table.push(line);
       continue;
     }
     if (!line.trim()) {
@@ -168,6 +201,7 @@ function markdown(value) {
     }
     para.push(line);
   }
+  if (table) out.push(renderMarkdownTable(table));
   flushPara();
   closeList();
   if (inCode) out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
@@ -347,6 +381,7 @@ function renderSidebar() {
   const counts = countsByStatus(state.ideas);
   const total = state.ideas.filter((i) => i.kind !== 'comment').length;
   const missingAgents = state.projectFiles.find((file) => file.key === 'agents' && !file.exists);
+  const missingOverview = state.projectFiles.find((file) => file.key === 'overview' && !file.exists);
 
   const card = $('#project-card');
   if (card) {
@@ -362,6 +397,8 @@ function renderSidebar() {
         <span class="pill amber">${counts.clarify} уточнить</span>
         <span class="pill">${project.export_path || '—'}</span>
       </div>
+      <button class="pc-overview" data-action="view" data-view="overview"><span>▤</span> Обзор проекта</button>
+      ${missingOverview ? '<button class="pc-warning" data-action="view" data-view="overview">⚠ OVERVIEW.md не создан — открыть обзор</button>' : ''}
       ${missingAgents ? '<button class="pc-warning" data-action="view" data-view="files">⚠ AGENTS.md не создан — создать</button>' : ''}`;
   }
 
@@ -729,6 +766,7 @@ function renderFiles() {
   const main = $('#main');
   const files = state.projectFiles || [];
   const agents = files.find((file) => file.key === 'agents');
+  const overview = files.find((file) => file.key === 'overview');
 
   if (!files.length) {
     main.innerHTML = `<div class="page-head"><div><h1>Файлы проекта</h1><div class="sub">Базовые документы для людей и ИИ-агентов.</div></div></div>
@@ -740,10 +778,17 @@ function renderFiles() {
     <div class="page-head">
       <div>
         <h1>Файлы проекта</h1>
-        <div class="sub">Базовые документы проекта. <code>AGENTS.md</code> — главный файл правил для ИИ-агентов; <code>README.md</code> — описание; остальные — обёртки для Claude, Gemini, Cursor и Copilot.</div>
+        <div class="sub">Базовые документы проекта. <code>OVERVIEW.md</code> — главная карточка возможностей и пайплайна; <code>AGENTS.md</code> — правила для ИИ-агентов; <code>README.md</code> — краткое описание; остальные — обёртки для Claude, Gemini, Cursor и Copilot.</div>
       </div>
       <div class="head-actions"><button class="btn ghost" data-action="refresh-files">Обновить</button></div>
     </div>
+    ${!overview?.exists ? `<div class="file-warning">
+      <div><b>OVERVIEW.md не создан.</b> Главная карточка проекта пуста. Создай файл из шаблона или передай промпт агенту, чтобы он описал возможности, API, пайплайн и ограничения.</div>
+      <div class="file-warning-actions">
+        <button class="btn accent" data-action="open-file" data-file="overview">Создать из шаблона</button>
+        <button class="btn ghost" data-action="copy-file-prompt" data-file="overview">Скопировать промпт</button>
+      </div>
+    </div>` : ''}
     ${!agents?.exists ? `<div class="file-warning">
       <div><b>AGENTS.md не создан.</b> Агенты не получат правила проекта. Создай файл из шаблона или скопируй промпт и передай его агенту.</div>
       <div class="file-warning-actions">
@@ -774,6 +819,104 @@ function renderFiles() {
     <div class="hint" style="margin-top:14px">AGENTS.md — основной источник правил. CLAUDE.md, GEMINI.md, .cursor/rules и .github/copilot-instructions.md — короткие обёртки, которые требуют прочитать AGENTS.md. Файлы лежат в vault проекта; экспорт не перезаписывает AGENTS.md и README.md.</div>`;
 }
 
+function renderOverview() {
+  const main = $('#main');
+  const p = state.project;
+  if (!p) {
+    main.innerHTML = '<div class="empty">Нет проектов. Создайте первый через «+ Проект».</div>';
+    return;
+  }
+  const files = state.projectFiles || [];
+  const overviewFile = files.find((file) => file.key === 'overview');
+  const counts = countsByStatus(state.ideas);
+  const total = state.ideas.filter((idea) => idea.kind !== 'comment').length;
+  const meta = p.meta || {};
+  const statusRows = Object.entries(STATUS)
+    .map(([key, value]) => `<div class="ov-status-row">
+      <span class="legend-dot" style="background:${value.color}"></span>
+      <span>${escapeHtml(value.label)}</span>
+      <b>${counts[key] || 0}</b>
+    </div>`)
+    .join('');
+  const sectionRows = state.sections
+    .map((section) => {
+      const n = state.ideas.filter((idea) => idea.section_key === section.key && idea.kind !== 'comment').length;
+      return `<button class="ov-section-row" data-action="section" data-section="${escapeHtml(section.key)}">
+        <span style="color:${escapeHtml(section.color)}">${escapeHtml(section.icon)}</span>
+        <span>${escapeHtml(section.name)}</span>
+        <b>${n}</b>
+      </button>`;
+    })
+    .join('');
+  const overviewBody = state.overview
+    ? `<div class="md overview-md">${markdown(state.overview)}</div>`
+    : '<div class="empty">OVERVIEW.md пока пуст. Создайте файл из шаблона или скопируйте промпт агенту.</div>';
+
+  main.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">ОБЗОР ПРОЕКТА</div>
+        <h1>${escapeHtml(p.name)}</h1>
+        <div class="sub">${escapeHtml(p.description || 'Описание проекта пока не заполнено.')}</div>
+      </div>
+      <div class="head-actions">
+        <button class="btn accent" data-action="open-file" data-file="overview">${overviewFile?.exists ? 'Редактировать обзор' : 'Создать OVERVIEW.md'}</button>
+        <button class="btn ghost" data-action="copy-file-prompt" data-file="overview">Промпт агенту</button>
+      </div>
+    </div>
+    <div class="stat-row">
+      <div class="stat">Стадия <b>${escapeHtml(p.stage || 'concept')}</b></div>
+      <div class="stat">Записей <b>${total}</b></div>
+      <div class="stat">Разделов <b>${state.sections.length}</b></div>
+      <div class="stat">В работе <b>${counts.in_progress || 0}</b></div>
+      <div class="stat">Уточнить <b>${counts.clarify || 0}</b></div>
+    </div>
+    ${!overviewFile?.exists ? `<div class="file-warning">
+      <div><b>OVERVIEW.md не создан.</b> Это главная карточка проекта: что это, зачем, что умеет, как запустить, API, структура, пайплайн, ограничения и проверки. Создай файл из шаблона или передай промпт агенту.</div>
+      <div class="file-warning-actions">
+        <button class="btn accent" data-action="open-file" data-file="overview">Создать из шаблона</button>
+        <button class="btn ghost" data-action="copy-file-prompt" data-file="overview">Скопировать промпт</button>
+      </div>
+    </div>` : ''}
+    <div class="overview-layout">
+      <section class="panel overview-main">
+        <div class="overview-panel-head">
+          <h2>OVERVIEW.md</h2>
+          <span class="hint">${overviewFile?.exists ? `обновлён ${fmtDate(overviewFile.updated_at)} · ${formatFileSize(overviewFile.size)}` : 'файл ещё не создан'}</span>
+        </div>
+        ${overviewBody}
+      </section>
+      <aside class="overview-side">
+        <div class="panel">
+          <h3>Быстрые ссылки</h3>
+          <div class="overview-actions">
+            <button class="btn small ghost" data-action="view" data-view="feed">Лента записей</button>
+            <button class="btn small ghost" data-action="view" data-view="files">Файлы проекта</button>
+            <button class="btn small ghost" data-action="view" data-view="agents">Агенты</button>
+            <button class="btn small ghost" data-action="view" data-view="export">Экспорт</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Проект</h3>
+          <div class="overview-meta">
+            <div><span>Vault</span><code>${escapeHtml(p.export_path || '—')}</code></div>
+            <div><span>Repo</span><code>${escapeHtml(meta.repo || '—')}</code></div>
+            <div><span>Spec</span><code>${escapeHtml(meta.spec || '—')}</code></div>
+            <div><span>Платформы</span><span>${escapeHtml(Array.isArray(meta.platforms) ? meta.platforms.join(', ') : meta.platforms || '—')}</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Статусы</h3>
+          <div class="ov-status-list">${statusRows}</div>
+        </div>
+        <div class="panel">
+          <h3>Разделы</h3>
+          <div class="ov-section-list">${sectionRows || '<div class="hint">Разделов пока нет.</div>'}</div>
+        </div>
+      </aside>
+    </div>`;
+}
+
 function splitList(value) {
   return String(value || '').split(/[,;]/).map((item) => item.trim()).filter(Boolean);
 }
@@ -785,6 +928,7 @@ function openProjectSettings() {
   const list = (value) => (Array.isArray(value) ? value.join(', ') : (value || ''));
   const files = state.projectFiles || [];
   const agents = files.find((file) => file.key === 'agents');
+  const overview = files.find((file) => file.key === 'overview');
   const plan = files.find((file) => file.key === 'plan');
   const statusPill = (file) => `<span class="pill ${file?.exists ? 'green' : 'amber'}">${file?.exists ? 'есть' : 'нет'}</span>`;
   openModal(`<button class="modal-close" data-action="close-modal">×</button>
@@ -805,6 +949,13 @@ function openProjectSettings() {
         <label class="field full"><span>Главный документ (spec)</span><input class="input" name="spec" value="${escapeHtml(meta.spec || '')}"><div class="hint">Абсолютный путь к главному md; используется просмотрщиком исходника.</div></label>
       </div>
       <div class="project-settings-files">
+        <div class="ps-file-row">
+          <div><b>OVERVIEW.md</b> ${statusPill(overview)}<div class="hint">Главная карточка проекта: возможности, API, пайплайн и ограничения.</div></div>
+          <div class="ps-file-actions">
+            <button type="button" class="btn small ghost" data-action="open-file" data-file="overview">${overview?.exists ? 'Открыть' : 'Создать'}</button>
+            <button type="button" class="btn small ghost" data-action="copy-file-prompt" data-file="overview">Промпт</button>
+          </div>
+        </div>
         <div class="ps-file-row">
           <div><b>AGENTS.md</b> ${statusPill(agents)}<div class="hint">Главные правила для ИИ-агентов.</div></div>
           <div class="ps-file-actions">
@@ -1183,7 +1334,8 @@ function renderMain() {
     $('#main').innerHTML = '<div class="empty">Нет проектов. Создайте первый через «+ Проект».</div>';
     return;
   }
-  if (state.view === 'feed') renderFeed();
+  if (state.view === 'overview') renderOverview();
+  else if (state.view === 'feed') renderFeed();
   else if (state.view === 'board') renderBoard();
   else if (state.view === 'sections') renderSections();
   else if (state.view === 'agents') renderAgents();
@@ -1191,7 +1343,7 @@ function renderMain() {
   else if (state.view === 'graph') renderGraph();
   else if (state.view === 'files') renderFiles();
   else if (state.view === 'export') renderExport();
-  else renderFeed();
+  else renderOverview();
 }
 
 /* ── Data actions ───────────────────────────────────────── */
@@ -1215,9 +1367,12 @@ async function loadProject(slug) {
   state.wizardResult = null;
   state.lastImport = null;
   state.projectFiles = [];
+  state.overview = '';
+  state.overviewExists = false;
   const { ideas } = await api(`/api/projects/${project.id}/ideas?limit=5000`);
   state.ideas = ideas;
   await refreshProjectFiles();
+  await refreshOverview();
   localStorage.setItem('kb.project', project.slug);
   localStorage.setItem('kb.view', state.view);
 }
@@ -1233,6 +1388,23 @@ async function refreshProjectFiles() {
   } catch (error) {
     state.projectFiles = [];
     console.warn('[files] cannot load:', error.message);
+  }
+}
+
+async function refreshOverview() {
+  if (!state.project) {
+    state.overview = '';
+    state.overviewExists = false;
+    return;
+  }
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(state.project.slug)}/files/overview`);
+    state.overview = data.content || '';
+    state.overviewExists = Boolean(data.exists);
+  } catch (error) {
+    state.overview = '';
+    state.overviewExists = false;
+    console.warn('[overview] cannot load:', error.message);
   }
 }
 
@@ -1969,6 +2141,7 @@ document.addEventListener('submit', async (event) => {
       });
       closeModal();
       await refreshProjectFiles();
+      await refreshOverview();
       renderSidebar();
       renderMain();
       toast('Файл сохранён', 'ok');
@@ -2325,7 +2498,7 @@ async function init() {
     const lastSlug = localStorage.getItem('kb.project');
     const project = projects.find((p) => p.slug === lastSlug) || projects[0];
     await loadProject(project.slug);
-    if (!NAV.some(([view]) => view === state.view)) state.view = 'feed';
+    if (!NAV.some(([view]) => view === state.view)) state.view = 'overview';
     renderAll();
     await openIdeaFromHash();
     const version = $('#version');
