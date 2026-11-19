@@ -10,6 +10,9 @@ exports/
 
 # Local game source created by agents; not part of the tracker repo.
 /emulator/
+/.opencode/
+/projects.7z
+/tmp_*.py
 
 # Game-specific / local-only seed and migration files.
 # The reusable tracker works with an empty database and the new-project wizard.
